@@ -1,10 +1,38 @@
-extern crate ntest;
 extern crate arctree;
 
-use ntest::timeout;
+use std::fmt;
+use std::sync::mpsc::channel;
+use std::thread;
+use std::time::Duration;
+
 use arctree::{Node, NodeEdge};
 
-use std::fmt;
+fn timeout<F>(f: F, duration: Duration)
+where
+    F: FnOnce() + Send + 'static,
+{
+    let (start_tx, start_rx) = channel::<()>();
+    let (end_tx, end_rx) = channel::<()>();
+
+    let guard = thread::spawn(move || {
+        start_tx.send(()).unwrap();
+        f();
+        end_tx.send(()).unwrap();
+    });
+
+    // Wait for the thread to start.
+    start_rx.recv().unwrap();
+
+    // Wait for the timeout
+    match end_rx.recv_timeout(duration) {
+        Err(_) => {
+            panic!("Timed out");
+        }
+        _ => (),
+    }
+
+    guard.join().unwrap();
+}
 
 #[test]
 fn it_works() {
@@ -147,16 +175,20 @@ fn insert_after_1() {
 ///
 /// This test is expected to panic with a timeout since the thread will block forever.
 #[test]
-#[timeout(100)]
 #[should_panic]
 fn iter_1() {
-    let node1 = Node::new(1);
-    let node2 = Node::new(2);
-    node1.append(node2.clone());
-    node2.append(node1.make_deep_copy());
+    timeout(
+        || {
+            let node1 = Node::new(1);
+            let node2 = Node::new(2);
+            node1.append(node2.clone());
+            node2.append(node1.make_deep_copy());
 
-    let _n = node2.write();
-    for _ in node1.descendants() {}
+            let _n = node2.write();
+            for _ in node1.descendants() {}
+        },
+        Duration::from_millis(100),
+    );
 }
 
 #[test]
