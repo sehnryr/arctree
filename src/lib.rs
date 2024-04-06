@@ -1,6 +1,6 @@
 /*!
 
-*rctree* is a "DOM-like" tree implemented using reference counting.
+*rctree* is a "DOM-like" tree implemented using atomic reference counting.
 
 "DOM-like" here means that data structures can be used to represent
 the parsed content of an HTML or XML document,
@@ -23,7 +23,7 @@ That is:
 * The tree is mutable:
   nodes (with their sub-trees) can be inserted or removed anywhere in the tree.
 
-The lifetime of nodes is managed through *reference counting*.
+The lifetime of nodes is managed through *atomic reference counting*.
 To avoid reference cycles which would cause memory leaks, the tree is *asymmetric*:
 each node holds optional *strong references* to its next sibling and first child,
 but only optional *weak references* to its parent, previous sibling, and last child.
@@ -40,7 +40,8 @@ Weak references to destroyed nodes are treated as if they were not set at all.
 (E.g. a node can become a root when its parent is destroyed.)
 
 Since nodes are *aliased* (have multiple references to them),
-[`RefCell`](http://doc.rust-lang.org/std/cell/index.html) is used for interior mutability.
+[`RwLock`](https://docs.rs/parking_lot/0.12.1/parking_lot/rwlock/type.RwLock.html)
+is used for interior mutability.
 
 Advantages:
 
@@ -49,7 +50,6 @@ Advantages:
 
 Disadvantages:
 
-* The tree can only be accessed from the thread is was created in.
 * Any tree manipulation, including read-only traversals,
   requires incrementing and decrementing reference counts,
   which causes run-time overhead.
@@ -61,12 +61,17 @@ Disadvantages:
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use std::cell::{Ref, RefCell, RefMut};
-use std::fmt;
-use std::rc::{Rc, Weak};
+extern crate parking_lot;
 
-type Link<T> = Rc<RefCell<NodeData<T>>>;
-type WeakLink<T> = Weak<RefCell<NodeData<T>>>;
+use std::fmt;
+use std::sync::{Arc, Weak};
+
+use parking_lot::{
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
+};
+
+type Link<T> = Arc<RwLock<NodeData<T>>>;
+type WeakLink<T> = Weak<RwLock<NodeData<T>>>;
 
 /// A reference to a node holding a value of type `T`. Nodes form a tree.
 ///
@@ -91,32 +96,32 @@ struct NodeData<T> {
 /// Cloning a `Node` only increments a reference count. It does not copy the data.
 impl<T> Clone for Node<T> {
     fn clone(&self) -> Self {
-        Node(Rc::clone(&self.0))
+        Node(Arc::clone(&self.0))
     }
 }
 
 impl<T> PartialEq for Node<T> {
     fn eq(&self, other: &Node<T>) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
 impl<T: fmt::Debug> fmt::Debug for Node<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&*self.borrow(), f)
+        fmt::Debug::fmt(&*self.read(), f)
     }
 }
 
 impl<T: fmt::Display> fmt::Display for Node<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&*self.borrow(), f)
+        fmt::Display::fmt(&*self.read(), f)
     }
 }
 
 impl<T> Node<T> {
     /// Creates a new node from its associated data.
     pub fn new(data: T) -> Node<T> {
-        Node(Rc::new(RefCell::new(NodeData {
+        Node(Arc::new(RwLock::new(NodeData {
             parent: None,
             first_child: None,
             last_child: None,
@@ -128,70 +133,63 @@ impl<T> Node<T> {
 
     /// Returns a weak reference to a node.
     pub fn downgrade(&self) -> WeakNode<T> {
-        WeakNode(Rc::downgrade(&self.0))
+        WeakNode(Arc::downgrade(&self.0))
     }
 
     /// Returns a parent node, unless this node is the root of the tree.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn parent(&self) -> Option<Node<T>> {
-        Some(Node(self.0.borrow().parent.as_ref()?.upgrade()?))
+        Some(Node(self.0.read().parent.as_ref()?.upgrade()?))
     }
 
     /// Returns a first child of this node, unless it has no child.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn first_child(&self) -> Option<Node<T>> {
-        Some(Node(self.0.borrow().first_child.as_ref()?.clone()))
+        Some(Node(self.0.read().first_child.as_ref()?.clone()))
     }
 
     /// Returns a last child of this node, unless it has no child.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn last_child(&self) -> Option<Node<T>> {
-        Some(Node(self.0.borrow().last_child.as_ref()?.upgrade()?))
+        Some(Node(self.0.read().last_child.as_ref()?.upgrade()?))
     }
 
     /// Returns the previous sibling of this node, unless it is a first child.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn previous_sibling(&self) -> Option<Node<T>> {
-        Some(Node(self.0.borrow().previous_sibling.as_ref()?.upgrade()?))
+        Some(Node(self.0.read().previous_sibling.as_ref()?.upgrade()?))
     }
 
     /// Returns the next sibling of this node, unless it is a last child.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn next_sibling(&self) -> Option<Node<T>> {
-        Some(Node(self.0.borrow().next_sibling.as_ref()?.clone()))
+        Some(Node(self.0.read().next_sibling.as_ref()?.clone()))
     }
 
-    /// Returns a shared reference to this node's data.
+    /// Returns an RAII guard that allows read access to the node's data.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node is currently mutably borrowed.
-    pub fn borrow(&self) -> Ref<T> {
-        Ref::map(self.0.borrow(), |v| &v.data)
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
+    pub fn read(&self) -> MappedRwLockReadGuard<'_, T> {
+        RwLockReadGuard::<'_, NodeData<T>>::map(self.0.read(), |v| &v.data)
     }
 
-    /// Returns a unique/mutable reference to this node's data.
+    /// Returns an RAII guard that allows write access to the node's data.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node is currently borrowed.
-    pub fn borrow_mut(&self) -> RefMut<T> {
-        RefMut::map(self.0.borrow_mut(), |v| &mut v.data)
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
+    pub fn write(&self) -> MappedRwLockWriteGuard<'_, T> {
+        RwLockWriteGuard::<'_, NodeData<T>>::map(self.0.write(), |v| &mut v.data)
     }
 
     /// Returns an iterator of nodes to this node and its ancestors.
@@ -217,9 +215,8 @@ impl<T> Node<T> {
 
     /// Returns an iterator of nodes to this node's children.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn children(&self) -> Children<T> {
         Children {
             next: self.first_child(),
@@ -229,9 +226,8 @@ impl<T> Node<T> {
 
     /// Returns `true` if this node has children nodes.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn has_children(&self) -> bool {
         self.first_child().is_some()
     }
@@ -254,160 +250,155 @@ impl<T> Node<T> {
 
     /// Detaches a node from its parent and siblings. Children are not affected.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node or one of its adjoining nodes is currently borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn detach(&self) {
-        self.0.borrow_mut().detach();
+        self.0.write().detach();
     }
 
     /// Appends a new child to this node, after existing children.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node, the new child, or one of their adjoining nodes is currently borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn append(&self, new_child: Node<T>) {
         assert!(*self != new_child, "a node cannot be appended to itself");
 
-        let mut self_borrow = self.0.borrow_mut();
+        let mut self_write = self.0.write();
         let mut last_child_opt = None;
         {
-            let mut new_child_borrow = new_child.0.borrow_mut();
-            new_child_borrow.detach();
-            new_child_borrow.parent = Some(Rc::downgrade(&self.0));
-            if let Some(last_child_weak) = self_borrow.last_child.take() {
+            let mut new_child_write = new_child.0.write();
+            new_child_write.detach();
+            new_child_write.parent = Some(Arc::downgrade(&self.0));
+            if let Some(last_child_weak) = self_write.last_child.take() {
                 if let Some(last_child_strong) = last_child_weak.upgrade() {
-                    new_child_borrow.previous_sibling = Some(last_child_weak);
+                    new_child_write.previous_sibling = Some(last_child_weak);
                     last_child_opt = Some(last_child_strong);
                 }
             }
-            self_borrow.last_child = Some(Rc::downgrade(&new_child.0));
+            self_write.last_child = Some(Arc::downgrade(&new_child.0));
         }
 
         if let Some(last_child_strong) = last_child_opt {
-            let mut last_child_borrow = last_child_strong.borrow_mut();
-            debug_assert!(last_child_borrow.next_sibling.is_none());
-            last_child_borrow.next_sibling = Some(new_child.0);
+            let mut last_child_write = last_child_strong.write();
+            debug_assert!(last_child_write.next_sibling.is_none());
+            last_child_write.next_sibling = Some(new_child.0);
         } else {
             // No last child
-            debug_assert!(self_borrow.first_child.is_none());
-            self_borrow.first_child = Some(new_child.0);
+            debug_assert!(self_write.first_child.is_none());
+            self_write.first_child = Some(new_child.0);
         }
     }
 
     /// Prepends a new child to this node, before existing children.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node, the new child, or one of their adjoining nodes is currently borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn prepend(&self, new_child: Node<T>) {
         assert!(*self != new_child, "a node cannot be prepended to itself");
 
-        let mut self_borrow = self.0.borrow_mut();
+        let mut self_write = self.0.write();
         {
-            let mut new_child_borrow = new_child.0.borrow_mut();
-            new_child_borrow.detach();
-            new_child_borrow.parent = Some(Rc::downgrade(&self.0));
-            match self_borrow.first_child.take() {
+            let mut new_child_write = new_child.0.write();
+            new_child_write.detach();
+            new_child_write.parent = Some(Arc::downgrade(&self.0));
+            match self_write.first_child.take() {
                 Some(first_child_strong) => {
                     {
-                        let mut first_child_borrow = first_child_strong.borrow_mut();
-                        debug_assert!(first_child_borrow.previous_sibling.is_none());
-                        first_child_borrow.previous_sibling = Some(Rc::downgrade(&new_child.0));
+                        let mut first_child_write = first_child_strong.write();
+                        debug_assert!(first_child_write.previous_sibling.is_none());
+                        first_child_write.previous_sibling = Some(Arc::downgrade(&new_child.0));
                     }
-                    new_child_borrow.next_sibling = Some(first_child_strong);
+                    new_child_write.next_sibling = Some(first_child_strong);
                 }
                 None => {
-                    debug_assert!(self_borrow.first_child.is_none());
-                    self_borrow.last_child = Some(Rc::downgrade(&new_child.0));
+                    debug_assert!(self_write.first_child.is_none());
+                    self_write.last_child = Some(Arc::downgrade(&new_child.0));
                 }
             }
         }
-        self_borrow.first_child = Some(new_child.0);
+        self_write.first_child = Some(new_child.0);
     }
 
     /// Inserts a new sibling after this node.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node, the new sibling, or one of their adjoining nodes is currently borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn insert_after(&self, new_sibling: Node<T>) {
         assert!(
             *self != new_sibling,
             "a node cannot be inserted after itself"
         );
 
-        let mut self_borrow = self.0.borrow_mut();
+        let mut self_write = self.0.write();
         {
-            let mut new_sibling_borrow = new_sibling.0.borrow_mut();
-            new_sibling_borrow.detach();
-            new_sibling_borrow.parent = self_borrow.parent.clone();
-            new_sibling_borrow.previous_sibling = Some(Rc::downgrade(&self.0));
-            match self_borrow.next_sibling.take() {
+            let mut new_sibling_write = new_sibling.0.write();
+            new_sibling_write.detach();
+            new_sibling_write.parent = self_write.parent.clone();
+            new_sibling_write.previous_sibling = Some(Arc::downgrade(&self.0));
+            match self_write.next_sibling.take() {
                 Some(next_sibling_strong) => {
                     {
-                        let mut next_sibling_borrow = next_sibling_strong.borrow_mut();
+                        let mut next_sibling_write = next_sibling_strong.write();
                         debug_assert!({
-                            let weak = next_sibling_borrow.previous_sibling.as_ref().unwrap();
-                            Rc::ptr_eq(&weak.upgrade().unwrap(), &self.0)
+                            let weak = next_sibling_write.previous_sibling.as_ref().unwrap();
+                            Arc::ptr_eq(&weak.upgrade().unwrap(), &self.0)
                         });
-                        next_sibling_borrow.previous_sibling = Some(Rc::downgrade(&new_sibling.0));
+                        next_sibling_write.previous_sibling = Some(Arc::downgrade(&new_sibling.0));
                     }
-                    new_sibling_borrow.next_sibling = Some(next_sibling_strong);
+                    new_sibling_write.next_sibling = Some(next_sibling_strong);
                 }
                 None => {
-                    if let Some(parent_ref) = self_borrow.parent.as_ref() {
+                    if let Some(parent_ref) = self_write.parent.as_ref() {
                         if let Some(parent_strong) = parent_ref.upgrade() {
-                            let mut parent_borrow = parent_strong.borrow_mut();
-                            parent_borrow.last_child = Some(Rc::downgrade(&new_sibling.0));
+                            let mut parent_write = parent_strong.write();
+                            parent_write.last_child = Some(Arc::downgrade(&new_sibling.0));
                         }
                     }
                 }
             }
         }
-        self_borrow.next_sibling = Some(new_sibling.0);
+        self_write.next_sibling = Some(new_sibling.0);
     }
 
     /// Inserts a new sibling before this node.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node, the new sibling, or one of their adjoining nodes is currently borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn insert_before(&self, new_sibling: Node<T>) {
         assert!(
             *self != new_sibling,
             "a node cannot be inserted before itself"
         );
 
-        let mut self_borrow = self.0.borrow_mut();
+        let mut self_write = self.0.write();
         let mut previous_sibling_opt = None;
         {
-            let mut new_sibling_borrow = new_sibling.0.borrow_mut();
-            new_sibling_borrow.detach();
-            new_sibling_borrow.parent = self_borrow.parent.clone();
-            new_sibling_borrow.next_sibling = Some(self.0.clone());
-            if let Some(previous_sibling_weak) = self_borrow.previous_sibling.take() {
+            let mut new_sibling_write = new_sibling.0.write();
+            new_sibling_write.detach();
+            new_sibling_write.parent = self_write.parent.clone();
+            new_sibling_write.next_sibling = Some(self.0.clone());
+            if let Some(previous_sibling_weak) = self_write.previous_sibling.take() {
                 if let Some(previous_sibling_strong) = previous_sibling_weak.upgrade() {
-                    new_sibling_borrow.previous_sibling = Some(previous_sibling_weak);
+                    new_sibling_write.previous_sibling = Some(previous_sibling_weak);
                     previous_sibling_opt = Some(previous_sibling_strong);
                 }
             }
-            self_borrow.previous_sibling = Some(Rc::downgrade(&new_sibling.0));
+            self_write.previous_sibling = Some(Arc::downgrade(&new_sibling.0));
         }
 
         if let Some(previous_sibling_strong) = previous_sibling_opt {
-            let mut previous_sibling_borrow = previous_sibling_strong.borrow_mut();
+            let mut previous_sibling_write = previous_sibling_strong.write();
             debug_assert!({
-                let rc = previous_sibling_borrow.next_sibling.as_ref().unwrap();
-                Rc::ptr_eq(rc, &self.0)
+                let rc = previous_sibling_write.next_sibling.as_ref().unwrap();
+                Arc::ptr_eq(rc, &self.0)
             });
-            previous_sibling_borrow.next_sibling = Some(new_sibling.0);
+            previous_sibling_write.next_sibling = Some(new_sibling.0);
         } else {
             // No previous sibling.
-            if let Some(parent_ref) = self_borrow.parent.as_ref() {
+            if let Some(parent_ref) = self_write.parent.as_ref() {
                 if let Some(parent_strong) = parent_ref.upgrade() {
-                    let mut parent_borrow = parent_strong.borrow_mut();
-                    parent_borrow.first_child = Some(new_sibling.0);
+                    let mut parent_write = parent_strong.write();
+                    parent_write.first_child = Some(new_sibling.0);
                 }
             }
         }
@@ -415,21 +406,19 @@ impl<T> Node<T> {
 
     /// Returns a copy of a current node without children.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn make_copy(&self) -> Node<T>
     where
         T: Clone,
     {
-        Node::new(self.borrow().clone())
+        Node::new(self.read().clone())
     }
 
     /// Returns a copy of a current node with children.
     ///
-    /// # Panics
-    ///
-    /// Panics if any of the descendant nodes are currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     pub fn make_deep_copy(&self) -> Node<T>
     where
         T: Clone,
@@ -486,22 +475,22 @@ impl<T> NodeData<T> {
             .and_then(|weak| weak.upgrade());
 
         if let Some(next_sibling_ref) = next_sibling_strong.as_ref() {
-            let mut next_sibling_borrow = next_sibling_ref.borrow_mut();
-            next_sibling_borrow.previous_sibling = previous_sibling_weak;
+            let mut next_sibling_write = next_sibling_ref.write();
+            next_sibling_write.previous_sibling = previous_sibling_weak;
         } else if let Some(parent_ref) = parent_weak.as_ref() {
             if let Some(parent_strong) = parent_ref.upgrade() {
-                let mut parent_borrow = parent_strong.borrow_mut();
-                parent_borrow.last_child = previous_sibling_weak;
+                let mut parent_write = parent_strong.write();
+                parent_write.last_child = previous_sibling_weak;
             }
         }
 
         if let Some(previous_sibling_strong) = previous_sibling_opt {
-            let mut previous_sibling_borrow = previous_sibling_strong.borrow_mut();
-            previous_sibling_borrow.next_sibling = next_sibling_strong;
+            let mut previous_sibling_write = previous_sibling_strong.write();
+            previous_sibling_write.next_sibling = next_sibling_strong;
         } else if let Some(parent_ref) = parent_weak.as_ref() {
             if let Some(parent_strong) = parent_ref.upgrade() {
-                let mut parent_borrow = parent_strong.borrow_mut();
-                parent_borrow.first_child = next_sibling_strong;
+                let mut parent_write = parent_strong.write();
+                parent_write.first_child = next_sibling_strong;
             }
         }
     }
@@ -514,14 +503,14 @@ impl<T> Drop for NodeData<T> {
             let mut open_set = vec![child];
 
             while let Some(node) = open_set.pop() {
-                let mut node_data = node.borrow_mut();
+                let mut node_data = node.write();
                 if let Some(next_sibling) = node_data.next_sibling.as_ref() {
                     open_set.push(next_sibling.clone());
                 }
 
                 // Child nodes should be processed if and only if strong_count is one,
                 // which means self is the only reference. Otherwise keep the subtree unchanged.
-                if Rc::strong_count(&node) == 1 {
+                if Arc::strong_count(&node) == 1 {
                     if let Some(first_child) = node_data.first_child.as_ref() {
                         open_set.push(first_child.clone());
                     }
@@ -539,9 +528,8 @@ pub struct Ancestors<T>(Option<Node<T>>);
 impl<T> Iterator for Ancestors<T> {
     type Item = Node<T>;
 
-    /// # Panics
-    ///
-    /// Panics if the node about to be yielded is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.0.take()?;
         self.0 = node.parent();
@@ -555,9 +543,8 @@ pub struct PrecedingSiblings<T>(Option<Node<T>>);
 impl<T> Iterator for PrecedingSiblings<T> {
     type Item = Node<T>;
 
-    /// # Panics
-    ///
-    /// Panics if the node about to be yielded is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.0.take()?;
         self.0 = node.previous_sibling();
@@ -571,9 +558,8 @@ pub struct FollowingSiblings<T>(Option<Node<T>>);
 impl<T> Iterator for FollowingSiblings<T> {
     type Item = Node<T>;
 
-    /// # Panics
-    ///
-    /// Panics if the node about to be yielded is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.0.take()?;
         self.0 = node.next_sibling();
@@ -600,9 +586,8 @@ impl<T> Children<T> {
 impl<T> Iterator for Children<T> {
     type Item = Node<T>;
 
-    /// # Panics
-    ///
-    /// Panics if the node about to be yielded is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished() {
             return None;
@@ -615,9 +600,8 @@ impl<T> Iterator for Children<T> {
 }
 
 impl<T> DoubleEndedIterator for Children<T> {
-    /// # Panics
-    ///
-    /// Panics if the node about to be yielded is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.finished() {
             return None;
@@ -635,9 +619,8 @@ pub struct Descendants<T>(Traverse<T>);
 impl<T> Iterator for Descendants<T> {
     type Item = Node<T>;
 
-    /// # Panics
-    ///
-    /// Panics if the node about to be yielded is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.0.next() {
@@ -743,9 +726,8 @@ impl<T> Traverse<T> {
 impl<T> Iterator for Traverse<T> {
     type Item = NodeEdge<T>;
 
-    /// # Panics
-    ///
-    /// Panics if the node about to be yielded is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished() {
             return None;
@@ -758,9 +740,8 @@ impl<T> Iterator for Traverse<T> {
 }
 
 impl<T> DoubleEndedIterator for Traverse<T> {
-    /// # Panics
-    ///
-    /// Panics if the node about to be yielded is currently mutably borrowed.
+    /// Calling this method will block the current thread until the lock is available.
+    /// Refer to [`RwLock`] for more information.
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.finished() {
             return None;

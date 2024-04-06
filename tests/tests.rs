@@ -1,5 +1,7 @@
+extern crate ntest;
 extern crate rctree;
 
+use ntest::timeout;
 use rctree::{Node, NodeEdge};
 
 use std::fmt;
@@ -43,7 +45,7 @@ fn it_works() {
         assert_eq!(
             b.descendants()
                 .map(|node| {
-                    let borrow = node.borrow();
+                    let borrow = node.read();
                     borrow.0
                 })
                 .collect::<Vec<_>>(),
@@ -58,7 +60,7 @@ struct TreePrinter<T>(Node<T>);
 
 impl<T: fmt::Debug> fmt::Debug for TreePrinter<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{:?}", self.0.borrow()).unwrap();
+        writeln!(f, "{:?}", self.0.read()).unwrap();
         iter_children(&self.0, 1, f);
 
         Ok(())
@@ -70,7 +72,7 @@ fn iter_children<T: fmt::Debug>(parent: &Node<T>, depth: usize, f: &mut fmt::For
         for _ in 0..depth {
             write!(f, "    ").unwrap();
         }
-        writeln!(f, "{:?}", child.borrow()).unwrap();
+        writeln!(f, "{:?}", child.read()).unwrap();
         iter_children(&child, depth + 1, f);
     }
 }
@@ -141,7 +143,11 @@ fn insert_after_1() {
     node1.insert_after(node1_2);
 }
 
+/// Test that the thread blocks when trying to modify the tree while iterating over it.
+///
+/// This test is expected to panic with a timeout since the thread will block forever.
 #[test]
+#[timeout(100)]
 #[should_panic]
 fn iter_1() {
     let node1 = Node::new(1);
@@ -149,7 +155,7 @@ fn iter_1() {
     node1.append(node2.clone());
     node2.append(node1.make_deep_copy());
 
-    let _n = node2.borrow_mut();
+    let _n = node2.write();
     for _ in node1.descendants() {}
 }
 

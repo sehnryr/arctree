@@ -5,7 +5,7 @@
 [![Rust 1.22+](https://img.shields.io/badge/rust-1.22+-orange.svg)](https://www.rust-lang.org)
 ![](https://img.shields.io/badge/unsafe-forbidden-brightgreen.svg)
 
-*rctree* is a "DOM-like" tree implemented using reference counting.
+*rctree* is a "DOM-like" tree implemented using atomic reference counting.
 
 ### Origin
 
@@ -34,7 +34,7 @@ That is:
 * The tree is mutable:
   nodes (with their sub-trees) can be inserted or removed anywhere in the tree.
 
-The lifetime of nodes is managed through *reference counting*.
+The lifetime of nodes is managed through *atomic reference counting*.
 To avoid reference cycles which would cause memory leaks, the tree is *asymmetric*:
 each node holds optional *strong references* to its next sibling and first child,
 but only optional *weak references* to its parent, previous sibling, and last child.
@@ -51,7 +51,8 @@ Weak references to destroyed nodes are treated as if they were not set at all.
 (E.g. a node can become a root when its parent is destroyed.)
 
 Since nodes are *aliased* (have multiple references to them),
-[`RefCell`](http://doc.rust-lang.org/std/cell/index.html) is used for interior mutability.
+[`RwLock`](https://docs.rs/parking_lot/0.12.1/parking_lot/rwlock/type.RwLock.html)
+is used for interior mutability.
 
 Advantages:
 
@@ -60,7 +61,6 @@ Advantages:
 
 Disadvantages:
 
-* The tree can only be accessed from the thread is was created in.
 * Any tree manipulation, including read-only traversals,
   requires incrementing and decrementing reference counts,
   which causes run-time overhead.
