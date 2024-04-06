@@ -61,8 +61,6 @@ Disadvantages:
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-extern crate parking_lot;
-
 use std::fmt;
 use std::sync::{Arc, Weak};
 
@@ -107,13 +105,13 @@ impl<T> PartialEq for Node<T> {
 }
 
 impl<T: fmt::Debug> fmt::Debug for Node<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&*self.read(), f)
     }
 }
 
 impl<T: fmt::Display> fmt::Display for Node<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&*self.read(), f)
     }
 }
@@ -451,7 +449,7 @@ impl<T> Clone for WeakNode<T> {
 }
 
 impl<T: fmt::Debug> fmt::Debug for WeakNode<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("(WeakNode)")
     }
 }

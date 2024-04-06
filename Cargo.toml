@@ -1,6 +1,7 @@
 [package]
 name = "arctree"
 version = "0.1.0"
+edition = "2018"
 authors = [
     "Simon Sapin <simon.sapin@exyr.org>",
     "Yevhenii Reizner <razrfalcon@gmail.com>",
