@@ -1,6 +1,6 @@
 /*!
 
-*rctree* is a "DOM-like" tree implemented using atomic reference counting.
+*arctree* is a "DOM-like" tree implemented using atomic reference counting.
 
 "DOM-like" here means that data structures can be used to represent
 the parsed content of an HTML or XML document,
@@ -57,7 +57,7 @@ Disadvantages:
 
 */
 
-#![doc(html_root_url = "https://docs.rs/rctree/0.4.0")]
+#![doc(html_root_url = "https://docs.rs/arctree")]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 

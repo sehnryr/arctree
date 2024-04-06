@@ -1,15 +1,15 @@
-# rctree
-![Build Status](https://github.com/RazrFalcon/rctree/workflows/rctree/badge.svg)
-[![Crates.io](https://img.shields.io/crates/v/rctree.svg)](https://crates.io/crates/rctree)
-[![Documentation](https://docs.rs/rctree/badge.svg)](https://docs.rs/rctree)
+# arctree
+![Build Status](https://github.com/sehnryr/arctree/workflows/arctree/badge.svg)
+[![Crates.io](https://img.shields.io/crates/v/arctree.svg)](https://crates.io/crates/arctree)
+[![Documentation](https://docs.rs/arctree/badge.svg)](https://docs.rs/arctree)
 [![Rust 1.22+](https://img.shields.io/badge/rust-1.22+-orange.svg)](https://www.rust-lang.org)
 ![](https://img.shields.io/badge/unsafe-forbidden-brightgreen.svg)
 
-*rctree* is a "DOM-like" tree implemented using atomic reference counting.
+*arctree* is a "DOM-like" tree implemented using atomic reference counting.
 
 ### Origin
 
-This is a fork of the [rust-forest](https://github.com/SimonSapin/rust-forest) rctree.
+This is a fork of [rctree](https://github.com/RazrFalcon/rctree).
 
 ### Details
 
@@ -68,4 +68,4 @@ Disadvantages:
 
 ### License
 
-*rctree* is licensed under the **MIT**.
+*arctree* is licensed under the **MIT License**.

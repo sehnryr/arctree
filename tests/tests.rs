@@ -1,8 +1,8 @@
 extern crate ntest;
-extern crate rctree;
+extern crate arctree;
 
 use ntest::timeout;
-use rctree::{Node, NodeEdge};
+use arctree::{Node, NodeEdge};
 
 use std::fmt;
 

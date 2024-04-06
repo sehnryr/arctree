@@ -1,4 +1,4 @@
-name: rctree
+name: arctree
 
 on: [push, pull_request]
 

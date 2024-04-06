@@ -1,14 +1,15 @@
 [package]
-name = "rctree"
+name = "arctree"
 version = "0.6.0"
 authors = [
     "Simon Sapin <simon.sapin@exyr.org>",
-    "Yevhenii Reizner <razrfalcon@gmail.com>"
+    "Yevhenii Reizner <razrfalcon@gmail.com>",
+    "Youn Mélois <youn@melois.dev>",
 ]
 license = "MIT"
 description = "A 'DOM-like' tree implemented using atomic reference counting"
-repository = "https://github.com/RazrFalcon/rctree"
-documentation = "https://docs.rs/rctree/"
+repository = "https://github.com/sehnryr/arctree"
+documentation = "https://docs.rs/arctree/"
 readme = "README.md"
 
 [dependencies]
