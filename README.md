@@ -2,7 +2,7 @@
 ![Build Status](https://github.com/sehnryr/arctree/workflows/arctree/badge.svg)
 [![Crates.io](https://img.shields.io/crates/v/arctree.svg)](https://crates.io/crates/arctree)
 [![Documentation](https://docs.rs/arctree/badge.svg)](https://docs.rs/arctree)
-[![Rust 1.22+](https://img.shields.io/badge/rust-1.22+-orange.svg)](https://www.rust-lang.org)
+[![Rust 1.49.0](https://img.shields.io/badge/rust-1.49.0-orange.svg)](https://releases.rs/docs/1.49.0/)
 ![](https://img.shields.io/badge/unsafe-forbidden-brightgreen.svg)
 
 *arctree* is a "DOM-like" tree implemented using atomic reference counting.
@@ -65,6 +65,10 @@ Disadvantages:
   requires incrementing and decrementing reference counts,
   which causes run-time overhead.
 * Nodes are allocated individually, which may cause memory fragmentation and hurt performance.
+
+## Minimum Supported Rust Version (MSRV)
+
+The current MSRV is 1.49.0 due to the `parking_lot` dependency.
 
 ## License
 
